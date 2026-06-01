@@ -611,7 +611,7 @@ static const kinet_gpu_backend_vtbl cuda_vtbl = {
     .op_kzg_open = cuda_not_supported_kzg_open,
     .op_kzg_verify = cuda_not_supported_kzg_verify,
     .op_ecrecover_batch = cuda_op_ecrecover_batch,
-    // ._reserved = {nullptr, nullptr, nullptr}，
+    // ._reserved = {nullptr, nullptr, nullptr},
 };
 
 // =============================================================================
