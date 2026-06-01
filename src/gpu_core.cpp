@@ -1333,15 +1333,21 @@ void kinet_event_destroy(KinetEvent* event) {
     delete event;
 }
 
-KinetError kinet_event_record(KinetEvent* event, KinetStream* /*stream*/) {
+KinetError kinet_event_record(KinetEvent* event, KinetStream* stream) {
     if (!event) return KINET_ERROR_INVALID_ARGUMENT;
+    // Stream can be null (use default stream)
+    // For CPU: record current time
+    // For GPU: would insert marker into command queue
     event->timestamp = std::chrono::steady_clock::now();
     event->recorded = true;
     return KINET_OK;
 }
 
-KinetError kinet_event_wait(KinetEvent* event, KinetStream* /*stream*/) {
+KinetError kinet_event_wait(KinetEvent* event, KinetStream* stream) {
     if (!event || !event->recorded) return KINET_ERROR_INVALID_ARGUMENT;
+    // Stream can be null (use default stream)
+    // For CPU: event is already complete (synchronous execution)
+    // For GPU: would wait until event is signaled
     return KINET_OK;
 }
 
@@ -1555,9 +1561,6 @@ static constexpr size_t BLS_G2_COMPRESSED_SIZE = 96;
 static constexpr size_t BLS_G1_UNCOMPRESSED_SIZE = 96;
 static constexpr size_t BLS_G2_UNCOMPRESSED_SIZE = 192;
 
-// fix bug
-static constexpr size_t BLS_SIG_SIZE = 96;
-
 KinetError kinet_bls_verify(KinetGPU* gpu,
                         const uint8_t* sig, size_t sig_len,
                         const uint8_t* msg, size_t msg_len,
@@ -1566,8 +1569,6 @@ KinetError kinet_bls_verify(KinetGPU* gpu,
     // Validate inputs
     if (!gpu || !gpu->vtbl) return KINET_ERROR_INVALID_ARGUMENT;
     if (!sig || !msg || !pubkey || !result) return KINET_ERROR_INVALID_ARGUMENT;
-    if (sig_len < BLS_SIG_SIZE || pubkey_len < BLS_G1_UNCOMPRESSED_SIZE || msg_len == 0)
-        return KINET_ERROR_INVALID_ARGUMENT;
 
     // Check backend supports required operations
     if (!gpu->vtbl->op_bls12_381_pairing) {

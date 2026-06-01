@@ -53,7 +53,7 @@ G1Projective msm_bn254(const U256* scalars, const G1Affine* points, size_t n) {
     if (n >= 1024) c = 8;
     if (n >= 4096) c = 10;
 
-    size_t num_buckets = static_cast<size_t>((1 << c) - 1);
+    int num_buckets = (1 << c) - 1;
     int num_windows = (256 + c - 1) / c;
 
     std::vector<G1Projective> buckets(num_buckets);
@@ -67,7 +67,7 @@ G1Projective msm_bn254(const U256* scalars, const G1Affine* points, size_t n) {
         }
 
         // Clear buckets
-        for (size_t i = 0; i < num_buckets; i++) {
+        for (int i = 0; i < num_buckets; i++) {
             buckets[i] = G1Projective::infinity();
         }
 
@@ -121,7 +121,7 @@ G1Projective msm_bn254(const U256* scalars, const G1Affine* points, size_t n) {
         G1Projective running = G1Projective::infinity();
         G1Projective sum = G1Projective::infinity();
 
-        for (size_t i = num_buckets; i-- > 0; ) {
+        for (int i = num_buckets - 1; i >= 0; i--) {
             running = g1_add(running, buckets[i]);
             sum = g1_add(sum, running);
         }
@@ -174,7 +174,7 @@ static void bit_reverse(uint64_t* data, size_t n) {
     }
 }
 
-static uint64_t find_primitive_root(size_t /*n*/, uint64_t m) {
+static uint64_t find_primitive_root(size_t n, uint64_t m) {
     // Known primitive roots for common NTT primes
     if (m == 0xFFFFFFFF00000001ULL) return 7;  // Goldilocks
     if (m == 0x1000000000000001ULL) return 3;
@@ -1586,7 +1586,7 @@ static KinetBackendError cpu_op_kzg_open(KinetBackendContext*,
     U256 remainder = fr_to_mont(c[degree - 1]);
 
     for (int i = (int)degree - 2; i >= 0; i--) {
-        quotient[static_cast<size_t>(i)] = remainder;
+        quotient[i] = remainder;
         remainder = fr_add(fr_mul(remainder, z_mont), fr_to_mont(c[i]));
     }
 
@@ -2067,7 +2067,6 @@ static KinetBackendError cpu_op_ringtail_combine_batch(
     KinetBackendContext*, const void* partial_sigs, const int32_t* lagrange_coeffs,
     void* combined_sigs, size_t threshold, size_t count) {
     if (!partial_sigs || !lagrange_coeffs || !combined_sigs) return KINET_BACKEND_ERROR_INVALID_ARGUMENT;
-    (void)threshold; // threshold used by GPU kernel, CPU stub processes all shares
     std::memset(combined_sigs, 0, count * 1024);
     return KINET_BACKEND_OK;
 }

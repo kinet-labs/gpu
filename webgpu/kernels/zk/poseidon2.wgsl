@@ -1,6 +1,3 @@
-// Copyright (c) 2024-2026 Kinet Industries Inc.
-// SPDX-License-Identifier: BSD-3-Clause-Eco
-//
 // Poseidon2 Hash - WGSL Implementation for WebGPU
 // BN254 scalar field arithmetic using 8x u32 limbs (WGSL lacks u64)
 //
