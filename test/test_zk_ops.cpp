@@ -1,4 +1,3 @@
-
 // Fixed ZK Operations Test Suite
 // Addresses issues from audit:
 // - Added known-answer tests (KAT) for Poseidon2

@@ -5,8 +5,6 @@
 // CUDA port of dag_executor.metal. Batched FHE operations scheduled by the DAG
 // scheduler. Operations at the same depth level execute in parallel.
 //
-// Copyright (C) 2024-2026 Kinet Partners Limited
-// SPDX-License-Identifier: BSD-3-Clause
 
 #include <cstdint>
 

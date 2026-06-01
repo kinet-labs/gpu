@@ -5,8 +5,6 @@
 //
 // Double-buffered BSK storage with async memory copy for blind rotation.
 //
-// Copyright (C) 2024-2025 Kinet Partners Limited
-// SPDX-License-Identifier: Apache-2.0
 
 #include <cstdint>
 

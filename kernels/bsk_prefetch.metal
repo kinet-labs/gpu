@@ -16,8 +16,6 @@
 //
 // Async copy uses Metal's memcpy semantics with fence for ordering.
 //
-// Copyright (C) 2024-2025 Kinet Partners Limited
-// SPDX-License-Identifier: Apache-2.0
 
 #include <metal_stdlib>
 using namespace metal;

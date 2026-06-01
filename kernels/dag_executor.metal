@@ -12,8 +12,6 @@
 // - Optimized for Apple Silicon (M1/M2/M3/M4)
 // - Minimal synchronization via depth-level batching
 //
-// Copyright (C) 2024-2025 Kinet Partners Limited
-// SPDX-License-Identifier: BSD-3-Clause
 
 #include <metal_stdlib>
 using namespace metal;
