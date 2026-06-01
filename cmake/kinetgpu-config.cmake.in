@@ -1,0 +1,16 @@
+# CMake config for Kinet GPU Core
+#
+# Usage:
+#   find_package(kinetgpu REQUIRED)
+#   target_link_libraries(myapp PRIVATE kinet::kinetgpu_core)
+
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/kinetgpu-targets.cmake")
+
+check_required_components(kinetgpu)
+
+# Provide convenient alias
+if(NOT TARGET kinet::gpu)
+    add_library(kinet::gpu ALIAS kinet::kinetgpu_core)
+endif()

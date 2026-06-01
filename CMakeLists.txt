@@ -1,450 +1,447 @@
-cmake_minimum_required(VERSION 3.25)
+# Kinet GPU Core - Lightweight plugin-based GPU acceleration library
+#
+# This is the CORE library only. It provides:
+#   - Stable ABI (backend_plugin.h)
+#   - Plugin loader (dlopen/LoadLibrary)
+#   - CPU fallback backend (builtin)
+#   - Backend-agnostic tests
+#
+# Backend plugins are built separately:
+#   - kinetcpp/metal  → libkinetgpu_backend_metal.dylib  (macOS arm64)
+#   - kinetcpp/cuda   → libkinetgpu_backend_cuda.so      (Linux/Windows)
+#   - kinetcpp/webgpu → libkinetgpu_backend_webgpu.so    (cross-platform)
+#
+# Usage:
+#   cmake -B build
+#   cmake --build build
 
-if(NOT MLX_VERSION)
-  file(STRINGS "mlx/version.h" _mlx_h_version REGEX "^#define MLX_VERSION_.*$")
-  string(REGEX MATCH "#define MLX_VERSION_MAJOR ([0-9]+)" _ "${_mlx_h_version}")
-  set(_major ${CMAKE_MATCH_1})
-  string(REGEX MATCH "#define MLX_VERSION_MINOR ([0-9]+)" _ "${_mlx_h_version}")
-  set(_minor ${CMAKE_MATCH_1})
-  string(REGEX MATCH "#define MLX_VERSION_PATCH ([0-9]+)" _ "${_mlx_h_version}")
-  set(_patch ${CMAKE_MATCH_1})
-  set(MLX_PROJECT_VERSION "${_major}.${_minor}.${_patch}")
-  set(MLX_VERSION ${MLX_PROJECT_VERSION})
-else()
-  string(REGEX REPLACE "^([0-9]+\.[0-9]+\.[0-9]+).*" "\\1" MLX_PROJECT_VERSION
-                       ${MLX_VERSION})
-endif()
+cmake_minimum_required(VERSION 3.20)
 
-project(
-  mlx
-  LANGUAGES C CXX
-  VERSION ${MLX_PROJECT_VERSION})
-
-# ----------------------------- Setup -----------------------------
-set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-set(CMAKE_INSTALL_MESSAGE NEVER)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-# ----------------------------- Configuration -----------------------------
-option(MLX_BUILD_TESTS "Build tests for mlx" ON)
-option(MLX_BUILD_EXAMPLES "Build examples for mlx" ON)
-option(MLX_BUILD_BENCHMARKS "Build benchmarks for mlx" OFF)
-option(MLX_BUILD_PYTHON_BINDINGS "Build python bindings for mlx" OFF)
-option(MLX_BUILD_METAL "Build metal backend" ON)
-option(MLX_BUILD_CPU "Build cpu backend" ON)
-option(MLX_BUILD_CUDA "Build cuda backend" OFF)
-option(MLX_METAL_DEBUG "Enhance metal debug workflow" OFF)
-option(MLX_ENABLE_X64_MAC "Enable building for x64 macOS" OFF)
-option(MLX_BUILD_GGUF "Include support for GGUF format" ON)
-option(MLX_BUILD_SAFETENSORS "Include support for safetensors format" ON)
-option(MLX_BUILD_PYTHON_STUBS "Build stub files for python bindings" ON)
-option(MLX_METAL_JIT "Use JIT compilation for Metal kernels" OFF)
-option(MLX_USE_CCACHE "Use CCache for compilation cache when available" ON)
-option(BUILD_SHARED_LIBS "Build mlx as a shared library" OFF)
-option(USE_SYSTEM_FMT "Use system's provided fmt library" OFF)
-option(USE_ASAN "Enable AddressSanitizer (ASan)" OFF)
-option(USE_UBSAN "Enable UndefinedBehaviorSanitizer (UBSan)" OFF)
-option(USE_TSAN "Enable ThreadSanitizer (TSan)" OFF)
-
-# --------------------- Processor tests -------------------------
-message(
-  STATUS
-    "Building MLX for ${CMAKE_SYSTEM_PROCESSOR} processor on ${CMAKE_SYSTEM_NAME}"
+project(kinet-gpu-core
+    VERSION 0.2.0
+    DESCRIPTION "Lightweight GPU acceleration core with plugin architecture"
+    LANGUAGES CXX
 )
 
-if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-  if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
-    if(NOT MLX_ENABLE_X64_MAC)
-      message(
-        FATAL_ERROR
-          "Building for x86_64 on macOS is not supported."
-          " If you are on an Apple silicon system, check the build"
-          " documentation for possible fixes: "
-          "https://ml-explore.github.io/mlx/build/html/install.html#build-from-source"
-      )
-    else()
-      set(MLX_BUILD_METAL OFF)
-      message(WARNING "Building for x86_64 arch is not officially supported.")
-    endif()
-  endif()
-else()
-  set(MLX_BUILD_METAL OFF)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# Shared library settings
+set(CMAKE_MACOSX_RPATH ON)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+
+# Set install RPATH to find libraries relative to executable
+if(APPLE)
+    set(CMAKE_INSTALL_RPATH "@loader_path/../lib")
+elseif(UNIX)
+    set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
 endif()
 
-if(MLX_USE_CCACHE)
-  find_program(CCACHE_PROGRAM ccache)
-  if(CCACHE_PROGRAM)
-    message(STATUS "Found CCache: ${CCACHE_PROGRAM}")
-    set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
-    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
-    set(CMAKE_CUDA_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
-  endif()
-endif()
+# =============================================================================
+# Compiler Warnings (enabled for all builds)
+# =============================================================================
 
-if(USE_ASAN AND USE_TSAN)
-  message(
-    FATAL_ERROR
-      "AddressSanitizer (ASan) and ThreadSanitizer (TSan) are mutually exclusive and cannot be enabled at the same time."
-  )
-endif()
-
-set(SANITIZER_COMPILE_FLAGS "")
-set(SANITIZER_LINK_FLAGS "")
-
-if(USE_ASAN)
-  if(WIN32 AND MSVC)
-    list(APPEND SANITIZER_COMPILE_FLAGS /fsanitize=address)
-    list(APPEND SANITIZER_LINK_FLAGS /fsanitize=address)
-  else()
-    list(APPEND SANITIZER_COMPILE_FLAGS -fsanitize=address)
-    list(APPEND SANITIZER_LINK_FLAGS -fsanitize=address)
-    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-      list(APPEND SANITIZER_LINK_FLAGS -lpthread)
-    endif()
-  endif()
-endif()
-
-if(USE_UBSAN)
-  if(WIN32 AND MSVC)
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-      list(APPEND SANITIZER_COMPILE_FLAGS -fsanitize=undefined)
-      list(APPEND SANITIZER_LINK_FLAGS -fsanitize=undefined)
-    else()
-      message(
-        WARNING
-          "UndefinedBehaviorSanitizer (UBSan) is not directly supported via a simple flag in MSVC."
-      )
-    endif()
-  else()
-    list(APPEND SANITIZER_COMPILE_FLAGS -fsanitize=undefined)
-    list(APPEND SANITIZER_LINK_FLAGS -fsanitize=undefined)
-  endif()
-endif()
-
-if(USE_TSAN)
-  if(WIN32 AND MSVC)
-    message(
-      FATAL_ERROR
-        "ThreadSanitizer (TSan) is not supported by the MSVC compiler. Please use Clang or GCC."
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    add_compile_options(
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wshadow
+        -Wconversion
+        -Wsign-conversion
+        -Wformat=2
+        -Wdouble-promotion
+        -Wnull-dereference
+        -Wimplicit-fallthrough
     )
-  elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    message(FATAL_ERROR "ThreadSanitizer (TSan) is not supported on macOS.")
-  else()
-    list(APPEND SANITIZER_COMPILE_FLAGS -fsanitize=thread)
-    list(APPEND SANITIZER_LINK_FLAGS -fsanitize=thread)
-    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-      list(APPEND SANITIZER_LINK_FLAGS -lpthread)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+        add_compile_options(
+            -Wduplicated-cond
+            -Wduplicated-branches
+            -Wlogical-op
+        )
     endif()
-  endif()
+elseif(MSVC)
+    add_compile_options(/W4 /permissive-)
 endif()
 
-# ----------------------------- Lib -----------------------------
+# =============================================================================
+# Options
+# =============================================================================
 
-include(FetchContent)
-# Avoid warning about DOWNLOAD_EXTRACT_TIMESTAMP in CMake 3.24:
-cmake_policy(SET CMP0135 NEW)
+option(KINET_GPU_BUILD_TESTS "Build tests" ON)
+option(KINET_GPU_BUILD_BENCHMARKS "Build benchmark harness" OFF)
+option(KINET_GPU_CPU_BACKEND "Build CPU fallback backend (recommended)" ON)
+option(KINET_GPU_CPU_USE_OPENMP "Use OpenMP for CPU backend parallelization" ON)
+option(KINET_GPU_METAL_BACKEND "Build Metal backend plugin (macOS only)" ON)
+option(KINET_GPU_CUDA_BACKEND "Build CUDA backend plugin" OFF)
+option(KINET_GPU_DAWN_BACKEND "Build Dawn/WebGPU backend plugin" OFF)
 
-add_library(mlx)
+# =============================================================================
+# Core Library (Static + Shared)
+# =============================================================================
 
-target_compile_options(mlx PUBLIC ${SANITIZER_COMPILE_FLAGS})
-target_link_options(mlx PUBLIC ${SANITIZER_LINK_FLAGS})
+# Core sources - just the essentials
+set(CORE_SOURCES
+    src/gpu_core.cpp
+    src/kernel_loader.cpp
+    src/zk_ops.cpp
+)
 
-if(MLX_BUILD_CUDA)
-  enable_language(CUDA)
-  find_package(CUDAToolkit REQUIRED)
-  find_package(CUDNN REQUIRED)
-  if(CUDAToolkit_VERSION VERSION_GREATER_EQUAL "13.1" AND CUDAToolkit_VERSION
-                                                          VERSION_LESS "13.2")
-    message(FATAL_ERROR "CUDA Toolkit 13.1 is not supported.")
-  endif()
+# CPU backend (builtin, optional but recommended)
+if(KINET_GPU_CPU_BACKEND)
+    list(APPEND CORE_SOURCES src/cpu_backend.cpp)
 endif()
 
-if(MLX_BUILD_METAL)
-  find_library(METAL_LIB Metal)
-  find_library(FOUNDATION_LIB Foundation)
-  find_library(QUARTZ_LIB QuartzCore)
-  if(METAL_LIB)
-    message(STATUS "Metal found ${METAL_LIB}")
-  else()
-    message(
-      FATAL_ERROR
-        "Metal not found. Set MLX_BUILD_METAL=OFF to build without GPU")
-  endif()
+# Static library (for embedding in Go/Rust)
+add_library(kinetgpu_core_static STATIC ${CORE_SOURCES})
 
-  if(MLX_METAL_DEBUG)
-    add_compile_definitions(MLX_METAL_DEBUG)
-  endif()
+target_include_directories(kinetgpu_core_static PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
 
-  # Throw an error if xcrun not found
-  execute_process(
-    COMMAND zsh "-c" "/usr/bin/xcrun -sdk macosx --show-sdk-version"
-    OUTPUT_VARIABLE MACOS_SDK_VERSION
-    OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+target_compile_definitions(kinetgpu_core_static PRIVATE
+    KINET_GPU_BUILDING_CORE
+    $<$<BOOL:${KINET_GPU_CPU_BACKEND}>:KINET_GPU_CPU_BACKEND>
+)
 
-  if(${MACOS_SDK_VERSION} LESS 14.0)
-    message(
-      FATAL_ERROR
-        "MLX requires macOS SDK >= 14.0 to be built with MLX_BUILD_METAL=ON")
-  endif()
-  message(STATUS "Building with macOS SDK version ${MACOS_SDK_VERSION}")
+set_target_properties(kinetgpu_core_static PROPERTIES
+    OUTPUT_NAME "kinetgpu"
+    POSITION_INDEPENDENT_CODE ON
+)
 
-  set(METAL_CPP_URL
-      https://developer.apple.com/metal/cpp/files/metal-cpp_26.zip)
+# Shared library (for dynamic linking)
+add_library(kinetgpu_core SHARED ${CORE_SOURCES})
 
-  if(NOT CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL "")
-    if(${CMAKE_OSX_DEPLOYMENT_TARGET} LESS 14.0)
-      message(FATAL_ERROR "MLX requires macOS >= 14.0")
+target_include_directories(kinetgpu_core PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+
+target_compile_definitions(kinetgpu_core PRIVATE
+    KINET_GPU_BUILDING_CORE
+    $<$<BOOL:${KINET_GPU_CPU_BACKEND}>:KINET_GPU_CPU_BACKEND>
+)
+
+# Link dl for plugin loading (Unix)
+if(NOT WIN32)
+    target_link_libraries(kinetgpu_core PRIVATE dl)
+    target_link_libraries(kinetgpu_core_static INTERFACE dl)
+endif()
+
+# OpenMP for CPU backend (optional)
+if(KINET_GPU_CPU_BACKEND AND KINET_GPU_CPU_USE_OPENMP)
+    find_package(OpenMP)
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(kinetgpu_core PRIVATE OpenMP::OpenMP_CXX)
+        target_link_libraries(kinetgpu_core_static PRIVATE OpenMP::OpenMP_CXX)
+        message(STATUS "CPU backend using OpenMP for parallelization")
     endif()
-    set(XCRUN_FLAGS "-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
-  endif()
-  execute_process(
-    COMMAND
-      zsh "-c"
-      "echo \"__METAL_VERSION__\" | xcrun -sdk macosx metal ${XCRUN_FLAGS} -E -x metal -P - | tail -1 | tr -d '\n'"
-    OUTPUT_VARIABLE MLX_METAL_VERSION COMMAND_ERROR_IS_FATAL ANY)
-  FetchContent_Declare(metal_cpp URL ${METAL_CPP_URL})
-  FetchContent_MakeAvailable(metal_cpp)
-  target_include_directories(
-    mlx PUBLIC $<BUILD_INTERFACE:${metal_cpp_SOURCE_DIR}>
-               $<INSTALL_INTERFACE:include/metal_cpp>)
-  target_link_libraries(mlx PUBLIC ${METAL_LIB} ${FOUNDATION_LIB} ${QUARTZ_LIB})
 endif()
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  # With newer clang/gcc versions following libs are implicitly linked, but when
-  # building on old distributions they need to be explicitly listed.
-  target_link_libraries(mlx PRIVATE dl pthread)
+set_target_properties(kinetgpu_core PROPERTIES
+    OUTPUT_NAME "kinetgpu"
+    VERSION ${PROJECT_VERSION}
+    SOVERSION 0
+)
+
+# =============================================================================
+# Metal Backend Plugin (macOS only)
+# =============================================================================
+
+if(KINET_GPU_METAL_BACKEND AND APPLE)
+    # Verify Metal.framework is available
+    find_library(METAL_FRAMEWORK Metal)
+    find_library(FOUNDATION_FRAMEWORK Foundation)
+
+    if(METAL_FRAMEWORK AND FOUNDATION_FRAMEWORK)
+        enable_language(OBJCXX)
+
+        add_library(kinetgpu_backend_metal SHARED src/metal_backend.mm)
+
+        target_include_directories(kinetgpu_backend_metal PRIVATE
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        )
+
+        target_link_libraries(kinetgpu_backend_metal PRIVATE
+            ${METAL_FRAMEWORK}
+            ${FOUNDATION_FRAMEWORK}
+        )
+
+        set_target_properties(kinetgpu_backend_metal PROPERTIES
+            OUTPUT_NAME "kinetgpu_backend_metal"
+            CXX_STANDARD 17
+            OBJCXX_STANDARD 17
+        )
+
+        # Suppress -Wconversion warnings from ObjC bridge casts
+        target_compile_options(kinetgpu_backend_metal PRIVATE -Wno-sign-conversion)
+
+        # Copy kernel sources next to the built library for runtime loading
+        add_custom_command(TARGET kinetgpu_backend_metal POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${CMAKE_CURRENT_SOURCE_DIR}/kernels/keccak256.metal
+                $<TARGET_FILE_DIR:kinetgpu_backend_metal>/keccak256.metal
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${CMAKE_CURRENT_SOURCE_DIR}/kernels/secp256k1_recover.metal
+                $<TARGET_FILE_DIR:kinetgpu_backend_metal>/secp256k1_recover.metal
+        )
+
+        install(TARGETS kinetgpu_backend_metal
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        )
+
+        set(HAS_METAL_BACKEND TRUE)
+        message(STATUS "Metal backend: ENABLED")
+    else()
+        set(HAS_METAL_BACKEND FALSE)
+        message(STATUS "Metal backend: DISABLED (Metal.framework not found)")
+    endif()
+else()
+    set(HAS_METAL_BACKEND FALSE)
+    if(APPLE)
+        message(STATUS "Metal backend: DISABLED (KINET_GPU_METAL_BACKEND=OFF)")
+    else()
+        message(STATUS "Metal backend: DISABLED (not macOS)")
+    endif()
 endif()
 
-if(WIN32)
-  if(MSVC)
-    # GGUF does not build with MSVC.
-    set(MLX_BUILD_GGUF OFF)
-  endif()
-  # Generate DLL and EXE in the same dir, otherwise EXE will not be able to run.
-  # This is only done when MLX is built as the top project.
-  if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-  endif()
-  # Windows implementation of dlfcn.h APIs.
-  FetchContent_Declare(
-    dlfcn-win32
-    GIT_REPOSITORY https://github.com/dlfcn-win32/dlfcn-win32.git
-    GIT_TAG v1.4.2
-    EXCLUDE_FROM_ALL)
-  block()
-  set(BUILD_SHARED_LIBS OFF)
-  FetchContent_MakeAvailable(dlfcn-win32)
-  endblock()
-  target_include_directories(mlx PRIVATE "${dlfcn-win32_SOURCE_DIR}/src")
-  target_link_libraries(mlx PRIVATE dl)
-endif()
+# =============================================================================
+# CUDA Backend Plugin (guarded by KINET_GPU_CUDA_BACKEND)
+# =============================================================================
 
-if(MLX_BUILD_CPU)
-  find_library(ACCELERATE_LIBRARY Accelerate)
-  if(ACCELERATE_LIBRARY)
-    message(STATUS "Accelerate found ${ACCELERATE_LIBRARY}")
-    set(MLX_BUILD_ACCELERATE ON)
-  else()
-    message(STATUS "Accelerate not found, using default backend.")
-    set(MLX_BUILD_ACCELERATE OFF)
-  endif()
+if(KINET_GPU_CUDA_BACKEND)
+    find_package(CUDAToolkit QUIET)
 
-  if(MLX_BUILD_ACCELERATE)
-    target_link_libraries(mlx PUBLIC ${ACCELERATE_LIBRARY})
-    add_compile_definitions(MLX_USE_ACCELERATE)
-    add_compile_definitions(ACCELERATE_NEW_LAPACK)
-  elseif(WIN32)
-    # Download and link prebuilt binaries of OpenBLAS. Note that we can only
-    # link with the dynamic library, the prebuilt binaries were built with MinGW
-    # so static-linking would require linking with MinGW's runtime.
-    FetchContent_Declare(
-      openblas
-      URL "https://github.com/OpenMathLib/OpenBLAS/releases/download/v0.3.31/OpenBLAS-0.3.31-x64.zip"
+    add_library(kinetgpu_backend_cuda SHARED src/cuda_backend.cpp)
+
+    target_include_directories(kinetgpu_backend_cuda PRIVATE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     )
-    FetchContent_MakeAvailable(openblas)
-    target_link_libraries(mlx
-                          PRIVATE "${openblas_SOURCE_DIR}/lib/libopenblas.lib")
-    target_include_directories(mlx PRIVATE "${openblas_SOURCE_DIR}/include")
-    # Make sure the DLL file is placed in the same dir with executables.
-    set(OPENBLAS_DLL_FILE "${openblas_SOURCE_DIR}/bin/libopenblas.dll")
-    add_custom_command(
-      TARGET mlx
-      POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${OPENBLAS_DLL_FILE}
-              ${CMAKE_BINARY_DIR})
-  else()
-    if(${CMAKE_HOST_APPLE})
-      # The blas shipped in macOS SDK is not supported, search homebrew for
-      # openblas instead.
-      set(BLA_VENDOR OpenBLAS)
-      set(LAPACK_ROOT
-          "${LAPACK_ROOT};$ENV{LAPACK_ROOT};/usr/local/opt/openblas")
+
+    if(CUDAToolkit_FOUND)
+        target_compile_definitions(kinetgpu_backend_cuda PRIVATE KINET_GPU_CUDA)
+        target_link_libraries(kinetgpu_backend_cuda PRIVATE CUDA::cudart)
+        set(HAS_CUDA_BACKEND TRUE)
+        message(STATUS "CUDA backend: ENABLED (CUDA ${CUDAToolkit_VERSION})")
+    else()
+        set(HAS_CUDA_BACKEND TRUE)
+        message(STATUS "CUDA backend: ENABLED (stub mode, no CUDA toolkit)")
     endif()
-    # Search and link with lapack.
-    find_package(LAPACK REQUIRED)
-    if(NOT LAPACK_FOUND)
-      message(FATAL_ERROR "Must have LAPACK installed")
-    endif()
-    find_path(LAPACK_INCLUDE_DIRS lapacke.h /usr/include /usr/local/include
-              /usr/local/opt/openblas/include)
-    message(STATUS "Lapack lib " ${LAPACK_LIBRARIES})
-    message(STATUS "Lapack include " ${LAPACK_INCLUDE_DIRS})
-    target_include_directories(mlx PRIVATE ${LAPACK_INCLUDE_DIRS})
-    target_link_libraries(mlx PRIVATE ${LAPACK_LIBRARIES})
-    # List blas after lapack otherwise we may accidentally incldue an old
-    # version of lapack.h from the include dirs of blas.
-    find_package(BLAS REQUIRED)
-    if(NOT BLAS_FOUND)
-      message(FATAL_ERROR "Must have BLAS installed")
-    endif()
-    # TODO find a cleaner way to do this
-    find_path(BLAS_INCLUDE_DIRS cblas.h /usr/include /usr/local/include
-              $ENV{BLAS_HOME}/include)
-    message(STATUS "Blas lib " ${BLAS_LIBRARIES})
-    message(STATUS "Blas include " ${BLAS_INCLUDE_DIRS})
-    target_include_directories(mlx PRIVATE ${BLAS_INCLUDE_DIRS})
-    target_link_libraries(mlx PRIVATE ${BLAS_LIBRARIES})
-  endif()
+
+    set_target_properties(kinetgpu_backend_cuda PROPERTIES
+        OUTPUT_NAME "kinetgpu_backend_cuda"
+        CXX_STANDARD 17
+    )
+
+    install(TARGETS kinetgpu_backend_cuda
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
 else()
-  set(MLX_BUILD_ACCELERATE OFF)
+    set(HAS_CUDA_BACKEND FALSE)
+    message(STATUS "CUDA backend: DISABLED (KINET_GPU_CUDA_BACKEND=OFF)")
 endif()
 
-message(STATUS "Downloading json")
-FetchContent_Declare(
-  json
-  URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)
-FetchContent_MakeAvailable(json)
-target_include_directories(
-  mlx PRIVATE $<BUILD_INTERFACE:${json_SOURCE_DIR}/single_include/nlohmann>)
+# =============================================================================
+# Dawn/WebGPU Backend Plugin (guarded by KINET_GPU_DAWN_BACKEND)
+# =============================================================================
 
-# Add standalone JACCL library (RDMA over Thunderbolt distributed backend)
-if(MLX_BUILD_CPU
-   AND ${CMAKE_SYSTEM_NAME} MATCHES "Darwin"
-   AND DEFINED MACOS_SDK_VERSION
-   AND MACOS_SDK_VERSION GREATER_EQUAL 26.2)
-  add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/mlx/distributed/jaccl/lib
-                   ${CMAKE_BINARY_DIR}/jaccl)
-endif()
+if(KINET_GPU_DAWN_BACKEND)
+    add_library(kinetgpu_backend_webgpu SHARED src/dawn_backend.cpp)
 
-add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/mlx)
+    target_include_directories(kinetgpu_backend_webgpu PRIVATE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    )
 
-target_include_directories(
-  mlx PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>
-             $<INSTALL_INTERFACE:include>)
+    # Check for Dawn or wgpu-native
+    find_package(Dawn QUIET)
+    if(Dawn_FOUND)
+        target_compile_definitions(kinetgpu_backend_webgpu PRIVATE KINET_GPU_DAWN USE_DAWN_API)
+        target_link_libraries(kinetgpu_backend_webgpu PRIVATE dawn::webgpu)
+        message(STATUS "Dawn backend: ENABLED (Dawn)")
+    else()
+        # Build without WebGPU runtime — keccak256 falls back to CPU
+        message(STATUS "Dawn backend: ENABLED (stub mode, no Dawn/wgpu)")
+    endif()
 
-if(USE_SYSTEM_FMT)
-  find_package(fmt REQUIRED)
+    set_target_properties(kinetgpu_backend_webgpu PROPERTIES
+        OUTPUT_NAME "kinetgpu_backend_webgpu"
+        CXX_STANDARD 17
+    )
+
+    # Copy WGSL kernels
+    add_custom_command(TARGET kinetgpu_backend_webgpu POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/kernels/keccak256.wgsl
+            $<TARGET_FILE_DIR:kinetgpu_backend_webgpu>/keccak256.wgsl
+    )
+
+    install(TARGETS kinetgpu_backend_webgpu
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+
+    set(HAS_DAWN_BACKEND TRUE)
 else()
-  FetchContent_Declare(
-    fmt
-    GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-    GIT_TAG 12.1.0
-    EXCLUDE_FROM_ALL)
-  FetchContent_MakeAvailable(fmt)
-endif()
-target_link_libraries(mlx PRIVATE $<BUILD_INTERFACE:fmt::fmt-header-only>)
-
-if(MLX_BUILD_PYTHON_BINDINGS)
-  message(STATUS "Building Python bindings.")
-  find_package(
-    Python 3.10
-    COMPONENTS Interpreter Development.Module
-    REQUIRED)
-  FetchContent_Declare(
-    nanobind
-    GIT_REPOSITORY https://github.com/wjakob/nanobind.git
-    GIT_TAG v2.12.0
-    GIT_SHALLOW TRUE
-    EXCLUDE_FROM_ALL)
-  FetchContent_MakeAvailable(nanobind)
-  add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/python/src)
+    set(HAS_DAWN_BACKEND FALSE)
+    message(STATUS "Dawn backend: DISABLED (KINET_GPU_DAWN_BACKEND=OFF)")
 endif()
 
-if(MLX_BUILD_TESTS)
-  include(CTest)
-  add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/tests)
+# =============================================================================
+# Tests (backend-agnostic)
+# =============================================================================
+
+if(KINET_GPU_BUILD_TESTS)
+    enable_testing()
+
+    add_executable(test_gpu_core test/test_core.cpp)
+    target_link_libraries(test_gpu_core PRIVATE kinetgpu_core)
+    add_test(NAME test_gpu_core COMMAND test_gpu_core)
+
+    add_executable(test_kernel_loader test/test_kernel_loader.cpp)
+    target_link_libraries(test_kernel_loader PRIVATE kinetgpu_core)
+    add_test(NAME test_kernel_loader COMMAND test_kernel_loader)
+
+    add_executable(test_zk_ops test/test_zk_ops.cpp)
+    target_link_libraries(test_zk_ops PRIVATE kinetgpu_core)
+    add_test(NAME test_zk_ops COMMAND test_zk_ops)
+
+    # Comprehensive coverage test (covers all previously untested APIs)
+    add_executable(test_coverage_complete test/test_coverage_complete.cpp)
+    target_link_libraries(test_coverage_complete PRIVATE kinetgpu_core)
+    add_test(NAME test_coverage_complete COMMAND test_coverage_complete)
+
+    # Edge cases and error handling tests
+    add_executable(test_edge_cases test/test_edge_cases.cpp)
+    target_link_libraries(test_edge_cases PRIVATE kinetgpu_core)
+    add_test(NAME test_edge_cases COMMAND test_edge_cases)
+
+    # Backend integration test
+    add_executable(test_backends test/test_backends.cpp)
+    target_link_libraries(test_backends PRIVATE kinetgpu_core)
+    add_test(NAME test_backends COMMAND test_backends)
+
+    # Link Metal backend into test if available
+    if(HAS_METAL_BACKEND)
+        add_dependencies(test_backends kinetgpu_backend_metal)
+    endif()
+
+    # Set library path for tests to find plugins
+    set_tests_properties(test_gpu_core test_kernel_loader test_zk_ops
+                        test_coverage_complete test_edge_cases test_backends PROPERTIES
+        ENVIRONMENT "KINET_GPU_BACKEND_PATH=${CMAKE_CURRENT_BINARY_DIR}"
+    )
 endif()
 
-if(MLX_BUILD_EXAMPLES)
-  add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/examples/cpp)
+# =============================================================================
+# Benchmarks (backend-agnostic harness)
+# =============================================================================
+
+if(KINET_GPU_BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
 endif()
 
-if(MLX_BUILD_BENCHMARKS)
-  add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/benchmarks/cpp)
-endif()
+# =============================================================================
+# pkg-config
+# =============================================================================
 
-# ----------------------------- Installation -----------------------------
 include(GNUInstallDirs)
 
+# Set private libs for static linking
 if(WIN32)
-  # Install DLLs to the same dir with extension file (core.pyd) on Windows.
-  set(CMAKE_INSTALL_BINDIR ".")
-  if(MLX_BUILD_CPU)
-    # Install OpenBLAS.
-    install(FILES ${OPENBLAS_DLL_FILE} TYPE BIN)
-  endif()
+    set(KINET_GPU_PC_PRIVATE_LIBS "")
+else()
+    set(KINET_GPU_PC_PRIVATE_LIBS "-ldl")
 endif()
 
-# Install library
-install(
-  TARGETS mlx
-  EXPORT MLXTargets
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-  INCLUDES
-  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/kinet-gpu.pc.in
+    ${CMAKE_CURRENT_BINARY_DIR}/kinetgpu.pc
+    @ONLY
+)
 
-# Install headers
-install(
-  DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/mlx
-  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-  COMPONENT headers
-  FILES_MATCHING
-  PATTERN "*.h"
-  PATTERN "backend/metal/kernels.h" EXCLUDE)
+# =============================================================================
+# Install
+# =============================================================================
 
-# Install metal dependencies
-if(MLX_BUILD_METAL)
+install(TARGETS kinetgpu_core kinetgpu_core_static
+    EXPORT kinetgpu-targets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
 
-  # Install metal cpp
-  install(
-    DIRECTORY ${metal_cpp_SOURCE_DIR}/
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/metal_cpp
-    COMPONENT metal_cpp_source)
+# Headers (ABI + public API)
+install(DIRECTORY include/kinet
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
 
-endif()
+# pkg-config
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/kinetgpu.pc
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+)
 
-# Install cmake config
-set(MLX_CMAKE_BUILD_CONFIG ${CMAKE_BINARY_DIR}/MLXConfig.cmake)
-set(MLX_CMAKE_BUILD_VERSION_CONFIG ${CMAKE_BINARY_DIR}/MLXConfigVersion.cmake)
-set(MLX_CMAKE_INSTALL_MODULE_DIR share/cmake/MLX)
+# CMake exports
+install(EXPORT kinetgpu-targets
+    FILE kinetgpu-targets.cmake
+    NAMESPACE kinet::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/kinetgpu
+)
 
-install(
-  EXPORT MLXTargets
-  FILE MLXTargets.cmake
-  DESTINATION ${MLX_CMAKE_INSTALL_MODULE_DIR})
+# =============================================================================
+# CMake Config Export
+# =============================================================================
 
 include(CMakePackageConfigHelpers)
 
 write_basic_package_version_file(
-  ${MLX_CMAKE_BUILD_VERSION_CONFIG}
-  COMPATIBILITY SameMajorVersion
-  VERSION ${MLX_VERSION})
+    "${CMAKE_CURRENT_BINARY_DIR}/kinetgpu-config-version.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
 
 configure_package_config_file(
-  ${CMAKE_CURRENT_LIST_DIR}/mlx.pc.in ${MLX_CMAKE_BUILD_CONFIG}
-  INSTALL_DESTINATION ${MLX_CMAKE_INSTALL_MODULE_DIR}
-  NO_CHECK_REQUIRED_COMPONENTS_MACRO
-  PATH_VARS CMAKE_INSTALL_LIBDIR CMAKE_INSTALL_INCLUDEDIR
-            MLX_CMAKE_INSTALL_MODULE_DIR)
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/kinetgpu-config.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/kinetgpu-config.cmake"
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/kinetgpu
+)
 
-install(FILES ${MLX_CMAKE_BUILD_CONFIG} ${MLX_CMAKE_BUILD_VERSION_CONFIG}
-        DESTINATION ${MLX_CMAKE_INSTALL_MODULE_DIR})
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/kinetgpu-config.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/kinetgpu-config-version.cmake"
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/kinetgpu
+)
 
-install(DIRECTORY ${CMAKE_MODULE_PATH}/
-        DESTINATION ${MLX_CMAKE_INSTALL_MODULE_DIR})
+# =============================================================================
+# Summary
+# =============================================================================
+
+# Check OpenMP status for summary
+if(KINET_GPU_CPU_BACKEND AND KINET_GPU_CPU_USE_OPENMP)
+    set(_openmp_status "${OpenMP_CXX_FOUND}")
+else()
+    set(_openmp_status "OFF")
+endif()
+
+message(STATUS "")
+message(STATUS "=== Kinet GPU Core Configuration ===")
+message(STATUS "  Version: ${PROJECT_VERSION}")
+message(STATUS "  CPU Backend: ${KINET_GPU_CPU_BACKEND}")
+message(STATUS "  OpenMP: ${_openmp_status}")
+message(STATUS "  Metal Backend: ${HAS_METAL_BACKEND}")
+message(STATUS "  CUDA Backend: ${HAS_CUDA_BACKEND}")
+message(STATUS "  Dawn Backend: ${HAS_DAWN_BACKEND}")
+message(STATUS "  Tests: ${KINET_GPU_BUILD_TESTS}")
+message(STATUS "  Benchmarks: ${KINET_GPU_BUILD_BENCHMARKS}")
+message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+message(STATUS "")
+
+# CPU-mode CUDA kernel tests (no nvcc required, compiles .cu as C++)
+add_executable(test_cuda_cpu test/test_cuda_cpu.cpp)
+target_include_directories(test_cuda_cpu PRIVATE kernels)
+target_compile_features(test_cuda_cpu PRIVATE cxx_std_17)
+add_test(NAME cuda_cpu_mode COMMAND test_cuda_cpu)

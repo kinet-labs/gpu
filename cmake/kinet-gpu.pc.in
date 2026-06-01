@@ -1,0 +1,12 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+exec_prefix=${prefix}
+libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@
+includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
+
+Name: kinet-gpu
+Description: Kinet GPU - Unified GPU acceleration (Metal/CUDA/Dawn/CPU)
+URL: https://github.com/kinet-labs/gpu
+Version: @PROJECT_VERSION@
+Libs: -L${libdir} -lkinetgpu
+Libs.private: @KINET_GPU_PC_PRIVATE_LIBS@
+Cflags: -I${includedir}
