@@ -1,4 +1,3 @@
-
 // Poseidon2 Hash - WGSL Implementation for WebGPU
 // BN254 scalar field arithmetic using 8x u32 limbs (WGSL lacks u64)
 //
