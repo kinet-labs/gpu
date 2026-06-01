@@ -20,6 +20,15 @@ kinet-labs/gpu/
 └── test/                  # Unit tests
 ```
 
+## Backends
+
+| Backend | Location | Notes |
+|---------|----------|-------|
+| CPU | `src/cpu_backend.cpp` | Always available, SIMD optimized |
+| Metal | `kinet-labs/metal` (separate) | Apple Silicon, uses MLX |
+| CUDA | `kinet-labs/cuda` (separate) | NVIDIA, uses CCCL |
+| WebGPU | `webgpu/` | Dawn-based, WGSL kernels |
+
 ## Build Requirements
 
 - Cuda compilation tools, release 13.0, V13.0.88
@@ -43,15 +52,6 @@ sudo apt-get update && sudo apt-get install -y cmake ninja-build
 ```
 
 - Xcode >= 15.0 and macOS SDK >= 14.0
-
-## Backends
-
-| Backend | Location | Notes |
-|---------|----------|-------|
-| CPU | `src/cpu_backend.cpp` | Always available, SIMD optimized |
-| Metal | `kinet-labs/metal` (separate) | Apple Silicon, uses MLX |
-| CUDA | `kinet-labs/cuda` (separate) | NVIDIA, uses CCCL |
-| WebGPU | `webgpu/` | Dawn-based, WGSL kernels |
 
 ## Building
 
