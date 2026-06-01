@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 Kinet Industries Inc.
+// SPDX-License-Identifier: BSD-3-Clause-Eco
+//
 // NTT for FHE - Optimized Number Theoretic Transform for BFV/CKKS schemes
 //
 // This kernel provides:

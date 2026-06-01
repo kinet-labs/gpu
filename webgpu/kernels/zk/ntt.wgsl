@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 Kinet Industries Inc.
+// SPDX-License-Identifier: BSD-3-Clause-Eco
+//
 // Number Theoretic Transform (NTT) - WGSL Implementation for WebGPU
 // Used for polynomial multiplication in FHE and lattice-based cryptography.
 //

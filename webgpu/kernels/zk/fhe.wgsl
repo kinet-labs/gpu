@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 Kinet Industries Inc.
+// SPDX-License-Identifier: BSD-3-Clause-Eco
+//
 // Fully Homomorphic Encryption (FHE) Primitives - WGSL Implementation
 // Supports TFHE-style operations for lattice-based cryptography.
 //

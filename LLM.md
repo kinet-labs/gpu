@@ -27,7 +27,7 @@ kinet-labs/gpu/
 | CPU | `src/cpu_backend.cpp` | Always available, SIMD optimized |
 | Metal | `kinet-labs/metal` (separate) | Apple Silicon, uses MLX |
 | CUDA | `kinet-labs/cuda` (separate) | NVIDIA, uses CCCL |
-| WebGPU | `webgpu/` | Dawn-based, WGSL kernels |
+| WebGPU | `kinet-labs/webgpu/` | Dawn-based, WGSL kernels |
 
 ## Build Requirements
 
