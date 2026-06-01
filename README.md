@@ -14,9 +14,9 @@ Backend plugins are built and distributed separately:
 
 | Plugin | Repo | Platform | Dependencies |
 |--------|------|----------|--------------|
-| Metal | `kinetcpp/metal` | macOS arm64 | MLX, Metal.framework |
-| CUDA | `kinetcpp/cuda` | Linux, Windows | CUDA Toolkit, CCCL |
-| WebGPU | `kinetcpp/webgpu` | All | Dawn/wgpu, gpu.cpp |
+| Metal | `kinet-labs/metal` | macOS arm64 | MLX, Metal.framework |
+| CUDA | `kinet-labs/cuda` | Linux, Windows | CUDA Toolkit, CCCL |
+| WebGPU | `kinet-labs/webgpu` | All | Dawn/wgpu, gpu.cpp |
 
 ## Building
 

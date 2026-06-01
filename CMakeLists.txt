@@ -7,9 +7,9 @@
 #   - Backend-agnostic tests
 #
 # Backend plugins are built separately:
-#   - kinetcpp/metal  → libkinetgpu_backend_metal.dylib  (macOS arm64)
-#   - kinetcpp/cuda   → libkinetgpu_backend_cuda.so      (Linux/Windows)
-#   - kinetcpp/webgpu → libkinetgpu_backend_webgpu.so    (cross-platform)
+#   - kinet-labs/metal  → libkinetgpu_backend_metal.dylib  (macOS arm64)
+#   - kinet-labs/cuda   → libkinetgpu_backend_cuda.so      (Linux/Windows)
+#   - kinet-labs/webgpu → libkinetgpu_backend_webgpu.so    (cross-platform)
 #
 # Usage:
 #   cmake -B build
@@ -73,9 +73,9 @@ endif()
 option(KINET_GPU_BUILD_TESTS "Build tests" ON)
 option(KINET_GPU_BUILD_BENCHMARKS "Build benchmark harness" OFF)
 option(KINET_GPU_CPU_BACKEND "Build CPU fallback backend (recommended)" ON)
-option(KINET_GPU_CPU_USE_OPENMP "Use OpenMP for CPU backend parallelization" ON)
-option(KINET_GPU_METAL_BACKEND "Build Metal backend plugin (macOS only)" ON)
-option(KINET_GPU_CUDA_BACKEND "Build CUDA backend plugin" OFF)
+option(KINET_GPU_CPU_USE_OPENMP "Use OpenMP for CPU backend parallelization" OFF)
+option(KINET_GPU_METAL_BACKEND "Build Metal backend plugin (macOS only)" OFF)
+option(KINET_GPU_CUDA_BACKEND "Build CUDA backend plugin" ON)
 option(KINET_GPU_DAWN_BACKEND "Build Dawn/WebGPU backend plugin" OFF)
 
 # =============================================================================

@@ -1,3 +1,6 @@
+// Copyright (c) 2024-2026 Kinet Industries Inc.
+// SPDX-License-Identifier: BSD-3-Clause-Eco
+//
 // Merkle Tree Operations - WGSL Implementation for WebGPU
 // Uses Poseidon2 as compression function
 //

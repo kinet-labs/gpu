@@ -5,7 +5,7 @@ Plugin-based GPU acceleration for blockchain and ML workloads.
 ## Structure
 
 ```
-kinetcpp/gpu/
+kinet-labs/gpu/
 ├── include/kinet/gpu.h      # C API (stable)
 ├── src/
 │   ├── gpu_core.cpp       # Core dispatch logic
@@ -25,9 +25,9 @@ kinetcpp/gpu/
 | Backend | Location | Notes |
 |---------|----------|-------|
 | CPU | `src/cpu_backend.cpp` | Always available, SIMD optimized |
-| Metal | `kinetcpp/metal` (separate) | Apple Silicon, uses MLX |
-| CUDA | `kinetcpp/cuda` (separate) | NVIDIA, uses CCCL |
-| WebGPU | `webgpu/` | Dawn-based, WGSL kernels |
+| Metal | `kinet-labs/metal` (separate) | Apple Silicon, uses MLX |
+| CUDA | `kinet-labs/cuda` (separate) | NVIDIA, uses CCCL |
+| WebGPU | `kinet-labs/webgpu/` | Dawn-based, WGSL kernels |
 
 ## Build Requirements
 

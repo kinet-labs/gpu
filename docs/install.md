@@ -30,7 +30,7 @@ Build and installation instructions for Kinet GPU Core.
 ### Clone and Build
 
 ```bash
-git clone https://github.com/kinetfi/gpu.git
+git clone https://github.com/kinet-labs/gpu.git
 cd gpu
 
 # Configure
@@ -96,7 +96,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 
 # For Apple Silicon (M1/M2/M3), Metal backend is recommended
-# Install separately from kinetcpp/metal
+# Install separately from kinet-labs/metal
 ```
 
 ### Linux (Ubuntu/Debian)
@@ -206,9 +206,9 @@ The core library includes only the CPU backend. GPU backends are separate plugin
 
 | Backend | Repository | Platform | Dependencies |
 |---------|------------|----------|--------------|
-| Metal | `kinetcpp/metal` | macOS arm64 | Metal.framework, MLX |
-| CUDA | `kinetcpp/cuda` | Linux, Windows | CUDA Toolkit 12+ |
-| WebGPU | `kinetcpp/webgpu` | All | Dawn or wgpu |
+| Metal | `kinet-labs/metal` | macOS arm64 | Metal.framework, MLX |
+| CUDA | `kinet-labs/cuda` | Linux, Windows | CUDA Toolkit 12+ |
+| WebGPU | `kinet-labs/webgpu` | All | Dawn or wgpu |
 
 ### Installing Backend Plugins
 
@@ -228,7 +228,7 @@ Backend plugins are shared libraries placed in the plugin search path.
 
 ```bash
 # Clone Metal backend
-git clone https://github.com/kinetfi/metal.git
+git clone https://github.com/kinet-labs/metal.git
 cd metal
 
 # Build
@@ -244,7 +244,7 @@ sudo cp build/libkinetgpu_backend_metal.dylib /usr/local/lib/kinet-gpu/
 
 ```bash
 # Requires CUDA Toolkit 12+
-git clone https://github.com/kinetfi/cuda.git
+git clone https://github.com/kinet-labs/cuda.git
 cd cuda
 
 cmake -B build -DCMAKE_BUILD_TYPE=Release
